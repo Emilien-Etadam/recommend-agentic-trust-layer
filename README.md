@@ -30,6 +30,10 @@ cp .env.example .env          # add GEMINI_API_KEY and EXA_API_KEY
 python3 server.py             # open http://localhost:8899
 ```
 
+**Windows, in Git Bash (MINGW64)?** Python buffers stdout there, so the startup banner
+(key checks, the URL, the printed demo key) won't show up until the buffer flushes. Run
+it unbuffered instead: `python3 -u server.py`.
+
 You need two keys: a free [Gemini](https://aistudio.google.com/apikey) key and an
 [Exa](https://exa.ai) key. More keys unlock more sources (see the engineering notes below),
 but these two are enough to get going. (Already on Vertex AI? Set
