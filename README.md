@@ -149,6 +149,12 @@ all three outcomes:
 | `market/kids-snacks-positioning.md` | "sugar causes hyperactivity" refuted, not stamped, refuting studies logged |
 | `metrics/activation.md` | internal definition, nothing to check on the web, left alone |
 
+The citation-integrity mode gets its own demo: [`examples/okf-citation-demo`](examples/okf-citation-demo)
+plants four errors into an otherwise-correct internal bundle (a wrong formula, a fabricated
+policy exemption, a claim re-cited to the wrong source, a policy edited out from under a
+downstream claim) and shows the adapter catching all four, with the control concept left
+verified and untouched.
+
 There's a drag-and-drop UI for this too: `python3 okf_server.py`, then http://localhost:8898.
 
 ## Things to know before you rely on it
