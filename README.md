@@ -38,6 +38,11 @@ see `.env.example`.)
 
 Type something like *"Humans only use 10% of their brains"* and watch it work.
 
+(This checks one claim at a time. To verify a whole bundle of documents — including
+against their own internal citations, not just the web — see
+["On a whole knowledge base"](#3-on-a-whole-knowledge-base) below: `python3 okf_server.py`
+on a different port, `8898`.)
+
 ## What you get back
 
 Here's what it says about *"Sugar makes children hyperactive"*:
