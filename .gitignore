@@ -9,6 +9,9 @@ keys.json
 *.key
 *.p12
 
+# local scratch — internal notes, never meant to ship
+okf-playground/
+
 # runtime state
 data/
 __pycache__/

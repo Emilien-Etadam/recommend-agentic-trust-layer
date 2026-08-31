@@ -319,7 +319,7 @@ def lane_serpapi(st):
     return ev, [_src(t, l, s) for t, l, s, _dt in rows[:10]], 0.01 * len(st["queries"][:2])
 
 
-PARALLEL_SCHema = {
+PARALLEL_SCHEMA = {
     "type": "object",
     "properties": {
         "verdict": {"type": "string",
@@ -348,7 +348,7 @@ def lane_parallel(st):
     r = parallel_ai.task(
         f"Verify this claim against the live web. Report what the best available sources "
         f"actually say, including anything that contradicts it.\n\nCLAIM: {st['normalized']}",
-        PARALLEL_SCHema, processor="lite", poll=30, interval=2)
+        PARALLEL_SCHEMA, processor="lite", poll=30, interval=2)
     c, basis = r.get("content") or {}, r.get("basis") or {}
     cits = []
     for b in basis.values():
