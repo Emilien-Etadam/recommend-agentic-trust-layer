@@ -155,7 +155,9 @@ policy exemption, a claim re-cited to the wrong source, a policy edited out from
 downstream claim) and shows the adapter catching all four, with the control concept left
 verified and untouched.
 
-There's a drag-and-drop UI for this too: `python3 okf_server.py`, then http://localhost:8898.
+There's a drag-and-drop UI for this too: `python3 okf_server.py`, then http://localhost:8898 —
+or skip the drag-and-drop and click the built-in "☠️ Poisoned bundle" sample to see this exact
+demo run without needing a bundle of your own.
 
 ## Things to know before you rely on it
 
