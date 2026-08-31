@@ -32,7 +32,9 @@ python3 server.py             # open http://localhost:8899
 
 You need two keys: a free [Gemini](https://aistudio.google.com/apikey) key and an
 [Exa](https://exa.ai) key. More keys unlock more sources (see the engineering notes below),
-but these two are enough to get going.
+but these two are enough to get going. (Already on Vertex AI? Set
+`GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_CLOUD_PROJECT` instead of `GEMINI_API_KEY` —
+see `.env.example`.)
 
 Type something like *"Humans only use 10% of their brains"* and watch it work.
 
