@@ -22,7 +22,7 @@ ANSWER_ENDPOINT = "https://api.exa.ai/answer"
 SEARCH_ENDPOINT = "https://api.exa.ai/search"
 
 # ── query log: every Exa query we send, appended to a JSONL file (gitignored) ──
-LOG_PATH = config.ROOT / "data" / "exa_queries.jsonl"
+LOG_PATH = config.DATA_DIR / "data" / "exa_queries.jsonl"
 _log_lock = threading.Lock()
 
 

@@ -1,6 +1,6 @@
 """Confidence Check — live backend.
 
-One claim in → structure it (Gemini) → fan out to independent evidence lanes IN PARALLEL
+One claim in → structure it (LLM) → fan out to independent evidence lanes IN PARALLEL
 (Exa answer, Exa search, SerpAPI, Parallel.ai deep research) → each lane is judged GROUNDED
 against what it actually fetched → aggregate into a verdict + calibrated-ish confidence.
 
@@ -10,6 +10,10 @@ Run:  python3 server.py        → http://localhost:8899
 Keys: copy .env.example to .env and fill in what you have. A lane whose key is
 missing reports an error and the check continues on the remaining lanes —
 GEMINI_API_KEY + EXA_API_KEY is the working minimum.
+
+Fully local: LLM_BASE_URL (llama-swap / any OpenAI-compatible server) replaces Gemini, and
+SEARXNG_URL (+ optional BYPARR_URL for bot-walled pages) replaces Exa + SerpAPI. The three
+web lanes keep their ids, names and weights; only the provider behind them changes.
 """
 import json
 import os
@@ -28,7 +32,9 @@ sys.path.insert(0, HERE)
 import config                                    # noqa: E402  (loads .env from the repo root)
 import gemini                                    # noqa: E402  (self-contained Gemini helper)
 from adapters import exa                         # noqa: E402
+from adapters import fetch                       # noqa: E402  (page text: plain GET → Byparr)
 from adapters import parallel as parallel_ai     # noqa: E402
+from adapters import searxng                     # noqa: E402
 
 config.load()          # populate credentials into os.environ before anything reads them
 PORT = int(os.environ.get("PORT", 8899))
@@ -319,6 +325,138 @@ def lane_serpapi(st):
     return ev, [_src(t, l, s) for t, l, s, _dt in rows[:10]], 0.01 * len(st["queries"][:2])
 
 
+# ── Local web lanes: SearXNG (+ Byparr) + the local LLM stand in for Exa / SerpAPI ──────
+# Same (evidence, sources, cost) contract, same lane ids, so judge/challenge/aggregate
+# never know the difference. Cost is 0 — it's your hardware.
+def local_search():
+    return searxng.configured()
+
+
+def _fetch_many(items, query, *, max_chars=1500, workers=4):
+    """Fetch page text for search hits concurrently; a page that won't read keeps its snippet.
+    Returns [(item, text)] in the original order."""
+    def one(it):
+        pg = fetch.page_text(it.url, max_chars=6000)
+        txt = fetch.excerpt_for(pg["text"], query, max_chars) if pg["text"] else it.content
+        return it, (txt or it.content or "")
+    with ThreadPoolExecutor(max_workers=max(1, min(workers, len(items) or 1))) as pool:
+        return list(pool.map(one, items))
+
+
+LOCAL_ANSWER_PROMPT = """Answer the question using ONLY the passages below. Be specific: figures,
+dates, who said what. Quote the passage numbers you rely on as [1], [2]… If the passages do not
+settle the question, say exactly that in one sentence — do not fill the gap from memory.
+Two to four sentences, plain prose, no preamble.
+
+QUESTION: {Q}
+
+PASSAGES:
+{P}"""
+
+_LOCAL_ANS_CACHE, _local_ans_lock = {}, threading.Lock()
+
+
+def _local_answer(query, *, n=5):
+    """A grounded answer the way Exa /answer returns one: SearXNG finds the pages, the fetcher
+    reads them, the local LLM writes the answer from those passages and nothing else.
+    Returns {answer, citations:[{title,url,text}]}; cached per query per process."""
+    with _local_ans_lock:
+        hit = _LOCAL_ANS_CACHE.get(query)
+    if hit is not None:
+        return hit
+    hits = searxng.search(query, n=n)
+    pairs = [(it, txt) for it, txt in _fetch_many(hits, query, max_chars=1200) if txt.strip()]
+    if not pairs:
+        out = {"answer": "", "citations": []}
+    else:
+        passages = "\n\n".join(f"[{i+1}] {it.title} ({it.url})\n{txt}"
+                               for i, (it, txt) in enumerate(pairs))
+        ans = gemini.gen(LOCAL_ANSWER_PROMPT.replace("{Q}", query).replace("{P}", passages),
+                         temperature=0.1, max_tokens=350)
+        out = {"answer": ans.strip(),
+               "citations": [{"title": it.title, "url": it.url, "text": txt} for it, txt in pairs]}
+    with _local_ans_lock:
+        _LOCAL_ANS_CACHE[query] = out
+    return out
+
+
+def _grounded_local(queries):
+    parts, cits, seen = [], [], set()
+    for q in [q for q in queries if q][:3]:
+        a = _local_answer(q)
+        if a.get("answer"):
+            parts.append(f"QUESTION ASKED: {q}\nANSWER: {a['answer']}")
+        for c in a["citations"]:
+            if c.get("url") and c["url"] not in seen:
+                seen.add(c["url"])
+                cits.append(c)
+    return "\n\n".join(parts), cits
+
+
+def lane_local_answer(st):
+    answers, cits = _grounded_local(st["queries"])
+    ev = answers + "\n\nCITED PASSAGES:\n" + "\n\n".join(
+        f"[{c.get('title', '')}] {(c.get('text') or '')[:900]}" for c in cits[:6])
+    return ev, [_src(c.get("title"), c.get("url"), c.get("text")) for c in cits[:6]], 0
+
+
+def lane_local_search(st):
+    """Semantic Web, local flavour: SearXNG hits + the page text behind each one."""
+    items, seen = [], set()
+    for q in st["queries"][:2]:
+        for it in searxng.search(q, n=4):
+            if it.url and it.url not in seen:
+                seen.add(it.url)
+                items.append(it)
+    pairs = _fetch_many(items[:8], st["normalized"], max_chars=900)
+    ev = "\n\n".join(f"[{it.title}] ({it.postdate or 'n/a'}) {txt[:900]}" for it, txt in pairs)
+    return ev, [_src(it.title, it.url, txt) for it, txt in pairs], 0
+
+
+def lane_local_serp(st):
+    """Live Index, local flavour: SearXNG snippets, with the engines' instant answers first
+    (the answer-box equivalent)."""
+    rows, seen = [], set()
+    for q in st["queries"][:2]:
+        try:
+            d = searxng.search_raw(q, n=8)
+        except Exception:
+            continue
+        for it in d["items"]:
+            if it.url and it.url not in seen:
+                seen.add(it.url)
+                rows.append((it.title, it.url, it.content, it.postdate))
+        # instant answers / infobox first — same idea as Google's answer box; both queries
+        # often surface the identical one, so key them by text
+        for label, txt in [("Infobox", d["infobox"])] + [("Search engine answer", a) for a in d["answers"][:1]]:
+            if txt and txt not in seen:
+                seen.add(txt)
+                rows.insert(0, (label, "", txt, ""))
+    ev = "\n\n".join(f"[{t}] ({dt or 'n/a'}) {s}" for t, _l, s, dt in rows[:10])
+    return ev, [_src(t, l, s) for t, l, s, _dt in rows[:10]], 0
+
+
+def lane_local_deep(st):
+    qs = (st.get("subclaims") or [])[:3] or [st["normalized"]]
+    answers, cits = _grounded_local([f"Is this accurate: {q}" for q in qs])
+    ev = "PER-SUB-CLAIM FINDINGS:\n" + answers + "\n\nCITED PASSAGES:\n" + "\n\n".join(
+        f"[{c.get('title', '')}] {(c.get('text') or '')[:900]}" for c in cits[:8])
+    return ev, [_src(c.get("title"), c.get("url"), c.get("text")) for c in cits[:8]], 0
+
+
+# Dispatchers: decided per call, so a .env loaded after import still counts.
+def lane_grounded(st):
+    return lane_local_answer(st) if local_search() else lane_exa_answer(st)
+
+
+def lane_semantic(st):
+    return lane_local_search(st) if local_search() else lane_exa_search(st)
+
+
+def lane_live(st):
+    return lane_local_serp(st) if local_search() else lane_serpapi(st)
+
+
 PARALLEL_SCHEMA = {
     "type": "object",
     "properties": {
@@ -506,14 +644,19 @@ def lane_market(st):
     return ev, srcs, 0
 
 
-LANES = [
-    ("web_grounded", "Grounded Web", lane_exa_answer, "fast"),
-    ("web_semantic", "Semantic Web", lane_exa_search, "fast"),
-    ("web_serp", "Live Index", lane_serpapi, "fast"),
+def lane_deep(st):
     # DEEP_ENGINE=parallel switches back to the heavyweight research processor: better
-    # citations, but ~70s vs ~8s. Fast path is the default.
-    ("deep_research", "Deep Research",
-     lane_parallel if os.environ.get("DEEP_ENGINE") == "parallel" else lane_deep_exa, "deep"),
+    # citations, but ~70s vs ~8s. Fast path is the default; SearXNG replaces it locally.
+    if os.environ.get("DEEP_ENGINE") == "parallel":
+        return lane_parallel(st)
+    return lane_local_deep(st) if local_search() else lane_deep_exa(st)
+
+
+LANES = [
+    ("web_grounded", "Grounded Web", lane_grounded, "fast"),
+    ("web_semantic", "Semantic Web", lane_semantic, "fast"),
+    ("web_serp", "Live Index", lane_live, "fast"),
+    ("deep_research", "Deep Research", lane_deep, "deep"),
     # only meaningful for claims about the future — no market exists for settled history
     ("market", "Prediction Market", lane_market, "forecast"),
     # studies settle cause-and-effect and population statistics; news coverage of them does not
@@ -804,7 +947,8 @@ def run_check(claim, emit, use_deep=True):
 
 
 # ── every check is appended to disk: this is the corpus we tune the judges on later ──
-LOG = os.path.join(HERE, "data", "checks.jsonl")
+DATA = str(config.DATA_DIR)                      # writable dir (DATA_DIR env, else repo root)
+LOG = os.path.join(DATA, "data", "checks.jsonl")
 
 
 def log_check(claim, st, results, verdict):
@@ -828,7 +972,7 @@ def log_check(claim, st, results, verdict):
 #     session and we re-check it on a schedule, so the score's daily movement is visible.
 #     Scoped by session id, so two people never see each other's watchlists.
 # ══════════════════════════════════════════════════════════════════════════════
-TRACK_FILE = os.path.join(HERE, "data", "tracked.json")
+TRACK_FILE = os.path.join(DATA, "data", "tracked.json")
 TRACK_EVERY_H = float(os.environ.get("TRACK_EVERY_H", 24))
 _track_lock = threading.Lock()
 
@@ -947,7 +1091,7 @@ def blind_gemini(claim):
     return _norm_blind(gemini.gen_json(BLIND_PROMPT.replace("{CLAIM}", claim), max_tokens=500))
 
 
-BLIND_MODELS = [("gemini", f"Gemini · {gemini.model_name()}", blind_gemini)]
+BLIND_MODELS = [("gemini", f"{gemini.provider_label()} · {gemini.model_name()}", blind_gemini)]
 
 # how a model's word-verdict maps onto our 0-1 truth axis, so we can score it
 VERDICT_P = {"true": 0.95, "mostly true": 0.75, "mixed": 0.5,
@@ -1014,7 +1158,7 @@ def compare(claim, grounded, emit):
 #    Streamable-HTTP transport (JSON-RPC over POST /mcp), gated on a bearer key
 #    so it only works for someone we hand a key to.
 # ══════════════════════════════════════════════════════════════════════════════
-KEYS_FILE = os.path.join(HERE, "keys.json")
+KEYS_FILE = os.path.join(DATA, "keys.json")
 
 # ── spend guards: this is public, and every check costs real API credit ──────────
 PER_IP_DAY = int(os.environ.get("PER_IP_DAY", 25))
@@ -1317,9 +1461,17 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     config.load()
     KEYS = load_keys()
-    print(f"  GEMINI          : {'ok' if gemini.configured() else 'MISSING (required — see .env.example)'}")
-    for k in ("EXA_API_KEY", "SERPAPI_API_KEY", "PARALLEL_API_KEY"):
-        print(f"  {k:16}: {'ok' if config.get(k) else 'missing (lane will sit out)'}")
+    if gemini.is_local():
+        print(f"  LLM             : {gemini.local_base_url()}  model={gemini.model_name()}")
+    else:
+        print(f"  GEMINI          : {'ok' if gemini.configured() else 'MISSING (required — see .env.example)'}")
+    if local_search():
+        print(f"  SEARXNG_URL     : {searxng.base_url()}  (web lanes run locally)")
+        print(f"  BYPARR_URL      : {fetch.byparr_url() or 'missing (bot-walled pages will be skipped)'}")
+    else:
+        for k in ("EXA_API_KEY", "SERPAPI_API_KEY"):
+            print(f"  {k:16}: {'ok' if config.get(k) else 'missing (lane will sit out)'}")
+    print(f"  PARALLEL_API_KEY: {'ok' if config.get('PARALLEL_API_KEY') else 'missing (lane will sit out)'}")
     threading.Thread(target=_track_daemon, daemon=True).start()
     print(f"\n  Confidence Check → http://localhost:{PORT}")
     print(f"  tracking         → re-check every {TRACK_EVERY_H}h (TRACK_EVERY_H to override)")
