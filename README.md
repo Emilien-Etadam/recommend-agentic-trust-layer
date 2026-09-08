@@ -168,6 +168,37 @@ There's a drag-and-drop UI for this too: `python3 okf_server.py`, then http://lo
 or skip the drag-and-drop and click the built-in "☠️ Poisoned bundle" sample to see this exact
 demo run without needing a bundle of your own.
 
+## Running it fully local (llama-swap + SearXNG)
+
+No cloud keys at all: a local model does the judging, a self-hosted SearXNG does the
+searching, and an optional Byparr reads the pages that block plain HTTP.
+
+```bash
+# .env
+LLM_BASE_URL=http://192.168.1.10:8080/v1   # llama-swap (or any OpenAI-compatible server)
+LLM_MODEL=qwen3-14b                        # model name from your llama-swap config.yaml
+SEARXNG_URL=http://192.168.1.20:8080       # JSON API must be on: search.formats: [html, json]
+BYPARR_URL=http://192.168.1.21:8191        # optional, for Cloudflare-walled pages
+```
+
+What changes and what doesn't:
+
+* The three web lanes keep their names, ids and weights. Behind them, SearXNG finds the
+  pages, the fetcher reads them (plain GET, then Byparr if the site refuses), and for the
+  "Grounded Web" and "Deep Research" lanes the local model writes the grounded answer from
+  those passages, the way Exa's `/answer` does.
+* Research Literature and Prediction Market were keyless already and are untouched.
+* Cost is reported as 0. Every check still makes 10–15 model calls (structure, a judge and
+  an opposing counsel per lane, review, readout) plus 3–6 for the local grounded answers.
+  llama-swap serves one model at a time, so expect one to three minutes per claim.
+* Model size matters. Below ~8B parameters the judge and the challenge get noisy and the
+  confidence number stops meaning much. A 14B-class model with a 16k context is the
+  comfortable floor; some prompts carry 14–16k characters of evidence. For a "thinking"
+  model set `LLM_MAX_TOKENS_MULT=3` so the reasoning has room, or disable thinking in
+  your llama-swap config.
+* SearXNG is keyword search where Exa is neural. The three reformulated queries from the
+  intake step compensate in part. Prefer `SEARXNG_ENGINES=google,bing,duckduckgo`.
+
 ## Things to know before you rely on it
 
 * **Every check costs real API credit.** There are daily caps built in (`PER_IP_DAY=25`,
@@ -187,10 +218,10 @@ demo run without needing a bundle of your own.
 
 | Lane | Runs when | Weight | Provider | Key |
 |---|---|---|---|---|
-| Grounded Web | always | 1.15 | Exa `/answer` per query | `EXA_API_KEY` |
-| Semantic Web | always | 0.9 | Exa `/search` | `EXA_API_KEY` |
-| Live Index | always | 0.85 | SerpAPI (Google + answer box) | `SERPAPI_API_KEY` |
-| Deep Research | `deep=1` checkbox | 1.35 | Exa per sub-claim (~7s); `DEEP_ENGINE=parallel` → Parallel.ai (~70s, better citations) | `EXA_API_KEY` / `PARALLEL_API_KEY` |
+| Grounded Web | always | 1.15 | Exa `/answer` per query · local: SearXNG + fetch + local LLM answer | `EXA_API_KEY` or `SEARXNG_URL` |
+| Semantic Web | always | 0.9 | Exa `/search` · local: SearXNG + page text | `EXA_API_KEY` or `SEARXNG_URL` |
+| Live Index | always | 0.85 | SerpAPI (Google + answer box) · local: SearXNG snippets + instant answers | `SERPAPI_API_KEY` or `SEARXNG_URL` |
+| Deep Research | `deep=1` checkbox | 1.35 | Exa per sub-claim (~7s) · local: SearXNG per sub-claim; `DEEP_ENGINE=parallel` → Parallel.ai (~70s, better citations) | `EXA_API_KEY` / `SEARXNG_URL` / `PARALLEL_API_KEY` |
 | Prediction Market | claim type `predictive` | 1.25 | Polymarket Gamma | none |
 | Research Literature | claim type `causal` / `statistical` | 1.4 | OpenAlex + Europe PMC | none |
 
