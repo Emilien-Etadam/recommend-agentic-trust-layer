@@ -947,7 +947,8 @@ def run_check(claim, emit, use_deep=True):
 
 
 # ── every check is appended to disk: this is the corpus we tune the judges on later ──
-LOG = os.path.join(HERE, "data", "checks.jsonl")
+DATA = str(config.DATA_DIR)                      # writable dir (DATA_DIR env, else repo root)
+LOG = os.path.join(DATA, "data", "checks.jsonl")
 
 
 def log_check(claim, st, results, verdict):
@@ -971,7 +972,7 @@ def log_check(claim, st, results, verdict):
 #     session and we re-check it on a schedule, so the score's daily movement is visible.
 #     Scoped by session id, so two people never see each other's watchlists.
 # ══════════════════════════════════════════════════════════════════════════════
-TRACK_FILE = os.path.join(HERE, "data", "tracked.json")
+TRACK_FILE = os.path.join(DATA, "data", "tracked.json")
 TRACK_EVERY_H = float(os.environ.get("TRACK_EVERY_H", 24))
 _track_lock = threading.Lock()
 
@@ -1157,7 +1158,7 @@ def compare(claim, grounded, emit):
 #    Streamable-HTTP transport (JSON-RPC over POST /mcp), gated on a bearer key
 #    so it only works for someone we hand a key to.
 # ══════════════════════════════════════════════════════════════════════════════
-KEYS_FILE = os.path.join(HERE, "keys.json")
+KEYS_FILE = os.path.join(DATA, "keys.json")
 
 # ── spend guards: this is public, and every check costs real API credit ──────────
 PER_IP_DAY = int(os.environ.get("PER_IP_DAY", 25))

@@ -199,6 +199,26 @@ What changes and what doesn't:
 * SearXNG is keyword search where Exa is neural. The three reformulated queries from the
   intake step compensate in part. Prefer `SEARXNG_ENGINES=google,bing,duckduckgo`.
 
+## Deploying with caddy-gui (systemd + Caddy PaaS)
+
+The repo is ready for [caddy-gui](https://github.com/Emilien-Etadam/caddy-gui): a `Procfile`
+gives it the start command, `PORT` / `HOST` / `DATA_DIR` injected by systemd are honoured,
+and nothing is written inside the release (keys, tracked claims and logs go to `DATA_DIR`).
+
+1. **New app** → repo `Emilien-Etadam/recommend-agentic-trust-layer`, branch `main`.
+   Kind is detected as Python, start command comes from the `Procfile`
+   (`python -u server.py`). Pick any free port and a hostname such as `trust.eta.lan`.
+2. **Tick "accès réseau sortant"** (outbound network). The check fetches evidence from the
+   web and talks to your llama-swap / SearXNG / Byparr LXCs; the default unit denies all
+   outbound traffic.
+3. **Env** tab → paste your `.env` contents (the local block above, or the cloud keys).
+   `DATA_DIR` and `PORT` are already set by the unit, don't add them.
+4. **Deploy.** The MCP key is printed once in the deploy log and stored in
+   `/var/lib/paas-<id>/keys.json`; `journalctl -u paas-<id>` shows it too.
+
+For the OKF verifier UI, create a second app on the same repo with start command
+`python -u okf_server.py` and its own port and hostname.
+
 ## Things to know before you rely on it
 
 * **Every check costs real API credit.** There are daily caps built in (`PER_IP_DAY=25`,

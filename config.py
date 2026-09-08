@@ -8,6 +8,10 @@ import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
+# Where the app WRITES (API keys, tracked claims, check log). Defaults to the repo
+# root; a PaaS / systemd unit with a read-only release sets DATA_DIR to a
+# persistent writable directory instead (caddy-gui injects /var/lib/paas-<id>).
+DATA_DIR = Path(os.environ.get("DATA_DIR") or ROOT)
 _LOADED = False
 
 
