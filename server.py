@@ -1349,10 +1349,13 @@ class Handler(BaseHTTPRequestHandler):
             body = open(os.path.join(HERE, "index.html"), "rb").read()
             # UI_LANG=fr → the French overlay (i18n/fr.js) translates the page at runtime.
             # index.html itself stays untouched so upstream merges never conflict.
+            # ui/*.js are layout overlays, always on when the file exists.
             lang = os.environ.get("UI_LANG", "en").strip().lower()[:2]
-            if lang != "en" and os.path.exists(os.path.join(HERE, "i18n", f"{lang}.js")):
-                body = body.replace(b"</head>",
-                                    f'<script src="i18n/{lang}.js"></script></head>'.encode(), 1)
+            overlays = [f"i18n/{lang}.js"] if lang != "en" else []
+            overlays += ["ui/compact.js"]
+            tags = "".join(f'<script src="{o}"></script>' for o in overlays
+                           if os.path.exists(os.path.join(HERE, o)))
+            body = body.replace(b"</head>", tags.encode() + b"</head>", 1)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")   # we're iterating on this file
@@ -1461,8 +1464,9 @@ class Handler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     break                            # user navigated away mid-check
             return
-        if u.path.startswith("/i18n/") and u.path.endswith(".js") and "/" not in u.path[6:]:
-            path = os.path.join(HERE, "i18n", u.path[6:])
+        if (u.path.startswith(("/i18n/", "/ui/")) and u.path.endswith(".js")
+                and u.path.count("/") == 2):
+            path = os.path.join(HERE, *u.path.strip("/").split("/"))
             if os.path.exists(path):
                 body = open(path, "rb").read()
                 self.send_response(200)
