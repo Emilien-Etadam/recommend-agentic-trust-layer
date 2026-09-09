@@ -26,7 +26,7 @@ whole knowledge base and stamp the files that hold up.
 git clone https://github.com/recommend-dev/recommend-agentic-trust-layer.git
 cd recommend-agentic-trust-layer
 pip install -r requirements.txt
-cp .env.example .env          # add GEMINI_API_KEY and EXA_API_KEY
+cp .env.example .env          # uncomment + fill GEMINI_API_KEY and EXA_API_KEY
 python3 server.py             # open http://localhost:8899
 ```
 
