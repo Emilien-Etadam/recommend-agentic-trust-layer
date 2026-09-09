@@ -26,7 +26,7 @@ whole knowledge base and stamp the files that hold up.
 git clone https://github.com/recommend-dev/recommend-agentic-trust-layer.git
 cd recommend-agentic-trust-layer
 pip install -r requirements.txt
-cp .env.example .env          # uncomment + fill GEMINI_API_KEY and EXA_API_KEY
+cp .env.example .env          # local setup; cloud keys: see "Cloud providers" below
 python3 server.py             # open http://localhost:8899
 ```
 
@@ -198,6 +198,23 @@ What changes and what doesn't:
   your llama-swap config.
 * SearXNG is keyword search where Exa is neural. The three reformulated queries from the
   intake step compensate in part. Prefer `SEARXNG_ENGINES=google,bing,duckduckgo`.
+
+### Cloud providers (optional)
+
+The same env variables drive the cloud path; they are kept out of `.env.example` so the
+caddy-gui deploy form stays short.
+
+| Variable | Role |
+|---|---|
+| `GEMINI_API_KEY` | Gemini as the model (free key: https://aistudio.google.com/apikey). Ignored when `LLM_BASE_URL` is set. |
+| `GOOGLE_APPLICATION_CREDENTIALS` + `GOOGLE_CLOUD_PROJECT` (+ `GEMINI_LOCATION`) | Vertex AI instead of the key |
+| `GEMINI_MODEL` | Model override, default `gemini-3.1-flash-lite` |
+| `EXA_API_KEY` | Grounded Web, Semantic Web, fast Deep Research. Ignored when `SEARXNG_URL` is set. |
+| `SERPAPI_API_KEY` | Live Index (Google + answer box). Ignored when `SEARXNG_URL` is set. |
+| `PARALLEL_API_KEY` + `DEEP_ENGINE=parallel` | Heavyweight Deep Research (~70s) |
+| `LLM_API_KEY`, `LLM_TIMEOUT`, `LLM_PROVIDER_LABEL` | Bearer token, per-call timeout (default 300s), UI label for the local server |
+| `SEARXNG_ENGINES`, `SEARXNG_LANGUAGE`, `BYPARR_TIMEOUT`, `FETCH_BYPARR_MAX` | Local lane tuning |
+| `PER_IP_DAY`, `GLOBAL_DAY`, `TRACK_EVERY_H`, `PORT`, `HOST`, `DATA_DIR` | Server knobs (the last three are set by the caddy-gui unit) |
 
 ## Deploying with caddy-gui (systemd + Caddy PaaS)
 
