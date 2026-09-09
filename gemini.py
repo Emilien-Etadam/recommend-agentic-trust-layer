@@ -148,7 +148,26 @@ def _gen_local(prompt, temperature, max_tokens, json_mode):
     return ""
 
 
+_LANG_NOTE = {
+    "fr": ("\n\nLANGUE DE SORTIE : écris toutes les valeurs en texte libre (summary, rationale, "
+           "answer, note, reason, readout, reasoning, status_note, checkable_note) en français. "
+           "Ne change pas les clés JSON, ni les valeurs d'énumération (stance, verdict, claim_type, "
+           "status, checkable), ni les citations verbatim (quote, subclaim, used). La claim "
+           "normalisée (normalized), les sous-claims et les requêtes de recherche (queries) "
+           "restent dans la langue de la claim d'origine."),
+}
+
+
+def _localize(prompt):
+    """OUTPUT_LANG=fr → one trailing instruction so human-read fields come back in French.
+    Kept here, at the single point every prompt passes through, so the prompts in server.py
+    stay byte-identical to upstream and merges from the original repo never conflict."""
+    note = _LANG_NOTE.get(os.environ.get("OUTPUT_LANG", "en").strip().lower()[:2])
+    return prompt + note if note else prompt
+
+
 def gen(prompt, temperature=0.2, max_tokens=700, json_mode=False):
+    prompt = _localize(prompt)
     if is_local():
         return _gen_local(prompt, temperature, max_tokens, json_mode)
     body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],

@@ -1347,6 +1347,12 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         if u.path in ("/", "/index.html"):
             body = open(os.path.join(HERE, "index.html"), "rb").read()
+            # UI_LANG=fr → the French overlay (i18n/fr.js) translates the page at runtime.
+            # index.html itself stays untouched so upstream merges never conflict.
+            lang = os.environ.get("UI_LANG", "en").strip().lower()[:2]
+            if lang != "en" and os.path.exists(os.path.join(HERE, "i18n", f"{lang}.js")):
+                body = body.replace(b"</head>",
+                                    f'<script src="i18n/{lang}.js"></script></head>'.encode(), 1)
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Cache-Control", "no-store")   # we're iterating on this file
@@ -1455,6 +1461,17 @@ class Handler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     break                            # user navigated away mid-check
             return
+        if u.path.startswith("/i18n/") and u.path.endswith(".js") and "/" not in u.path[6:]:
+            path = os.path.join(HERE, "i18n", u.path[6:])
+            if os.path.exists(path):
+                body = open(path, "rb").read()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
         self.send_error(404)
 
 
