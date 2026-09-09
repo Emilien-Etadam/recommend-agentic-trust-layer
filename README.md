@@ -199,6 +199,14 @@ What changes and what doesn't:
 * SearXNG is keyword search where Exa is neural. The three reformulated queries from the
   intake step compensate in part. Prefer `SEARXNG_ENGINES=google,bing,duckduckgo`.
 
+### French interface
+
+Set `UI_LANG=fr` and `OUTPUT_LANG=fr`. The page is translated at runtime by `i18n/fr.js`
+(injected by the server; `index.html` is never edited, so pulling upstream never conflicts),
+and the model is told to write the readout, rationale and lane summaries in French. API and
+MCP payloads stay in English. A sentence upstream rewords simply shows in English until it
+is added to the dictionary in `i18n/fr.js`.
+
 ### Cloud providers (optional)
 
 The same env variables drive the cloud path; they are kept out of `.env.example` so the
